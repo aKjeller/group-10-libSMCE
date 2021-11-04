@@ -362,62 +362,43 @@ bool FrameBuffer::read_rgb444(std::span<std::byte> buf) {
     return true;
 }
     
-/* Starter task - RGB565 support - write */
+/* RGB565 support - write */
 bool FrameBuffer::write_rgb565(std::span<const std::byte> buf) {
     if (!exists())
         return false;
-
     auto& frame_buf = m_bdat->frame_buffers[m_idx];
-    
-    div_t bufsizeDiv = div(buf.size(), 2);
-    div_t framebufDiv = div(frame_buf.data.size(), 3);;
-      
-    if ((bufsizeDiv.quot != framebufDiv.quot) || (bufsizeDiv.rem != framebufDiv.rem))
+    if (buf.size() != frame_buf.data.size() / 3 * 2)
         return false;
-      
-    auto* to = frame_buf.data.data();
-    
-    //loop thru the buffer, pick each two 'halves' of RGB565
-    for (int i=0;i<(buf.size()-1);i+=2) { 
-    std::byte part1 = buf[i];
-    std::byte part2 = buf[i+1];
-    
-    //Combine parts to create an RGB565
-    uint16_t rgb565 = ((part1<<8) | (part2 & 0xFF));
-    //Convert
-        *to++= ((rgb565>>11) & 0x01F)<<3;//R
-        *to++= ((rgb565>>5) & 0x03F)<<2;//G
-        *to++= ((rgb565) & 0x01F)<<3;//B  
-    }  
-    
-    return true;        
-}
+    [[maybe_unused]] std::lock_guard lk{frame_buf.data_mut};
 
-/* Starter task - RGB565 support - read */
+    auto* to = frame_buf.data.data();
+
+    for (unsigned int i = 0; i < (buf.size() - 1);) {
+        *to++ = buf[i] & (std::byte)0b11111000;
+        *to++ = ((buf[i] & (std::byte)0b00000111) << 5) | ((buf[i + 1] & (std::byte)0b11100000) >> 3);
+        i += 1;
+        *to++ = (buf[i] & (std::byte)0b00011111) << 3;
+    }
+    return true;
+}
+/* RGB Support read */
 bool FrameBuffer::read_rgb565(std::span<std::byte> buf) {
     if (!exists())
         return false;
 
     auto& frame_buf = m_bdat->frame_buffers[m_idx];
-    if (buf.size() != frame_buf.data.size())
+    if (buf.size() != frame_buf.data.size() / 3 * 2)
         return false;
-        
+    [[maybe_unused]] std::lock_guard lk{frame_buf.data_mut};
+
     const auto* from = frame_buf.data.data();
-	uint16_t rgb565;
-    int i=0;
-    for (std::byte& to : buf) {
-        //Full RGB565
-        if (i % 2 ==0){
-			rgb565 = ((from[0]<<11) & 0x01F)>>3 | ((from[1]<<5) & 0x03F)>>2 | (from[2] & 0x01F)>>3;
-            from += 3;
-        } 
-        //Divide into parts and pack
-        if (i % 2 == 0){
-			to = rgb565 >> 8;
-        } else {
-			to = rgb565 & 0xFF;
-        }
-        i++;
+
+    for (int i = 0; i < buf.size(); i++) {
+        std::byte red = *from++;
+        std::byte green = *from++;
+        std::byte blue = *from++;
+        buf[i++] = (red & (std::byte)0b11111000) | ((green & (std::byte)0b11100000) >> 5);
+        buf[i++] = ((green & (std::byte)0b00000111) << 5) | ((blue & (std::byte)0b11111000) >> 3);
     }
 
     return true;

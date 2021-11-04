@@ -128,3 +128,5 @@ TEST_CASE("BoardView UART", "[BoardView]") {
 
     REQUIRE(br.stop());
 }
+
+
